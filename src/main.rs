@@ -116,6 +116,32 @@ fn test_pixel_to_point() {
     );
 }
 
+fn color_mapping(iteration_count: u8) -> (u8, u8, u8) {
+    let mapping = vec![
+        (106, 52, 3),
+        (153, 87, 0),
+        (204, 128, 0),
+        (255, 170, 0),
+        (248, 201, 95),
+        (241, 233, 191),
+        (211, 236, 248),
+        (134, 181, 229),
+        (57, 125, 209),
+        (24, 82, 177),
+        (12, 44, 138),
+        (0, 7, 100),
+        (4, 4, 73),
+        (9, 1, 47),
+        (25, 7, 26),
+        (66, 30, 15),
+    ];
+
+    if iteration_count < 255 && iteration_count > 0 {
+        return mapping[iteration_count as usize % mapping.len()];
+    }
+    (0, 0, 0)
+}
+
 /// Render a rectangle of the Mandelbrot set into a buffer of pixels.
 ///
 /// The `bounds` argument gives the width and height of the buffer `pixels`,
@@ -128,15 +154,21 @@ fn render(
     upper_left: Complex<f64>,
     lower_right: Complex<f64>,
 ) {
-    assert!(pixels.len() == bounds.0 * bounds.1);
+    assert!(pixels.len() == bounds.0 * bounds.1 * 3);
 
     for row in 0..bounds.1 {
         for column in 0..bounds.0 {
             let point = pixel_to_point(bounds, (column, row), upper_left, lower_right);
-            pixels[row * bounds.0 + column] = match escape_time(point, 255) {
+            let rate = match escape_time(point, 255) {
                 None => 0,
                 Some(count) => 255 - count as u8,
             };
+
+            let color = color_mapping(rate);
+
+            pixels[row * bounds.0 + (column * 3)] = color.0;
+            pixels[row * bounds.0 + (column * 3) + 1] = color.1;
+            pixels[row * bounds.0 + (column * 3) + 2] = color.2;
         }
     }
 }
@@ -155,12 +187,7 @@ fn write_image(
     let output = File::create(filename)?;
 
     let encoder = PNGEncoder::new(output);
-    encoder.encode(
-        &pixels,
-        bounds.0 as u32,
-        bounds.1 as u32,
-        ColorType::Gray(8),
-    )?;
+    encoder.encode(&pixels, bounds.0 as u32, bounds.1 as u32, ColorType::RGB(8))?;
 
     Ok(())
 }
@@ -183,11 +210,11 @@ fn main() {
     let upper_left = parse_complex(&args[3]).expect("error parsing upper left corner point");
     let lower_right = parse_complex(&args[4]).expect("error parsing lower right corner point");
 
-    let mut pixels = vec![0; bounds.0 * bounds.1];
+    let mut pixels = vec![0; bounds.0 * bounds.1 * 3];
 
     // Scope of slicing up `pixels` into horizontal bands.
     {
-        let bands: Vec<(usize, &mut [u8])> = pixels.chunks_mut(bounds.0).enumerate().collect();
+        let bands: Vec<(usize, &mut [u8])> = pixels.chunks_mut(bounds.0 * 3).enumerate().collect();
 
         bands.into_par_iter().for_each(|(i, band)| {
             let top = i;
